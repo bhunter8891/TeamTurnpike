@@ -1,0 +1,16 @@
+\subsection*{Object and Road Detection}
+This part of the problem involved algorithms to find out which of the components found by the segmenter were roads. We observe that roads are generally long and narrow, while non-road components (such as forests, rooftops, etc) are generally less narrow. Our approach to the problem of deciding whether a given component is a road involved calculating each component's narrowness ratio, calculated by the following algorithm:
+
+First, calculate the typical diameter $R$ of the component by taking $C$ random pairs of points and taking the average distance between them. Then calculate the narrowness of the component by taking $C$ random points in it, and calculating the minimal distance of each of these points to a different component. Call the average of these distances $D$. The ratio $R/D$ describes the narrowness of an object, and was found to correlate well with its probability of being a road.
+
+By testing this on a representative sample of road pictures, we used naive baysian probability to write a function calculating the probability of a given component being a road. In particular, we assumed that both roads and non-road components have narrowness ratio given by a normal distribution, used our sample to calculate their means and variances, and calculate the probability of a component being a road by the conditional probability given by this model. 
+
+Our results our fairly optimistic, with all observed roads being classified as having probability at least $60%$ of being roads. Non-road components are occasionally misclassified, however. As false negatives are more harmful to our program than false positives, this is acceptable.
+
+\textbf{Notes on choices:} We found that $C=1000$ was a good value - it allows for reasonably fast computations (no more than a couple of minutes at worst), as well as allowing sufficient accuracy for our predictions. 
+
+We also chose to use minimal distance to another component when calculating $D$, rather than using minimal distance to any pixel not in the component. This is significant, since most images have a significant number of pixels which are not classified as part of any component. However, roads almost always have other components nearby, while isolated components are rarely roads. As a small value of $D$ raises the probability that a component is a road, this improves our accuracy.
+
+
+\textbf{Oppurtunities for further improvement}
+It may be useful to further train our model by considering more variables. In particular, using the first few moments of both the average diameter $R$ and the average distance to outside $D$ (instead of just the ratio of their means) may have the ability to greatly improve the accuracy of the model. Furthermore, once our car classification program improves, we can adjust the probability of a component to be a road if we detect cars on it.

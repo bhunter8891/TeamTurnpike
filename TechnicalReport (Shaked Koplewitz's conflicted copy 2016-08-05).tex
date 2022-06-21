@@ -1,0 +1,221 @@
+\documentclass[12pt]{article}
+
+%PACKAGES
+\usepackage{fullpage}
+\usepackage{setspace}
+\setlength{\parindent}{0cm}
+\usepackage{parskip}
+\usepackage{amssymb, amsmath, amsthm, graphicx}
+\usepackage{mathtools}
+\usepackage{siunitx}
+\usepackage{comment}
+\usepackage{scrextend}
+\usepackage{lipsum}
+
+\newcommand\tab[1][1cm]{\hspace*{#1}}
+
+%FONTS
+\usepackage{times}
+
+%COMMANDS
+\newcommand{\note}[1]{\textcolor{orange}{#1}}
+\DeclarePairedDelimiter{\norm}{\|}{\|}
+
+\begin{document}
+\begin{Large}
+Human Guided Machine Vision for Road Detection\\
+Team AddNameHereWhenWeFinallyDecide\\
+\end{Large}
+Kelsey DiPietro, Richard Frnka, Brian Hunter, Shaked K, Khanh Nguyen, Scott Spencer
+
+\subsection*{Problem Statement}
+
+Detection of roads from an aerial view is an important problem, yet one with an elusive general solution. Road detection is essential to developing and maintaining a database of roads, especially with the increased use of GPS devices. Humans are particularly good at picking out roads from an image, but can only do so at a limited speed. Computers operate at the other end of the spectrum, lacking in a general algorithm to detect roads, but able to do so quickly. To get the best of both worlds, it is useful to combine a computer program with human input to fill in where a computer missed a road. 
+
+$\newline$
+The task was to create a program which finds roads in an aerial image and contains a user interface for a human to highlight specific roads and identify any missed roads. All user interface was to be done in a graphical component which allows the user to easily click on the image and have the computer do the rest of filling in and highlighting.
+
+\subsection*{Initial Setup}
+The project was divided into three subprojects: A pre-processing part which involved initially segmenting the image into candidate road component and an object detection part which involved ranking the components for their likeliness to be a road and finding obstructions that blocked view of the road. After pre-processing was complete, there was a graphical user interface piece which would allow a human user to select and highlight roads and identify any roads missed by the pre-processing.
+
+All programming was done using MATLAB which has built in libraries for image segmentation and graphical user interface. Only simple images consisting of a single road with no cars were considered initially, but as the segmentation methods were developed, more complicated road configurations were used. Since no single algorithm performed well on all roads, many were considered, each with a unique segmentation process.
+
+\subsection*{Segmentation Methods}
+
+Below is a list of the segmentation functions with pseudocode and a brief description:
+
+
+\subsubsection*{basicSegmentation}
+\begin{addmargin}[12em]{1em}
+	J $\leftarrow$ grayscale image \\
+	BW $\leftarrow$ edge(J,canny) \\
+	se0 $\leftarrow$ structural horizontal line of length 3 \\
+	se90 $\leftarrow$ structural vertical line of length 3 \\
+	BW $\leftarrow$ dilate(BW,[se0,se90]) \\
+	BW2 $\leftarrow$ $\sim$BW \\
+	BW, BW2 $\leftarrow$ fillHoles(BW), fillHoles(BW2)\\
+	BW, BW2 $\leftarrow$ BW, BW2 minus small pieces \\
+	CC1 $\leftarrow$ components(BW) \\
+	CC2 $\leftarrow$ components(BW2) \\
+	return CC1 + CC2 \\	
+\end{addmargin}
+This method is a bareboned road finder. It finds the edges, thickens them, fills the holes, cleans up noise, and returns the components.
+
+\subsubsection*{blurSegmentation}
+\begin{addmargin}[12em]{1em}
+	J $\leftarrow$ grayscale image \\
+	se $\leftarrow$ structural square \\
+	Io $\leftarrow$ erode(J,se) \\
+	Io $\leftarrow$ dilate(J,se) \\
+	Ie $\leftarrow$ erode(Io,se) \\
+	Iobr $\leftarrow$ reconstruct(Ie,$\sim$J) \\
+	Iobrd $\leftarrow$ dilate(Iobr, se) \\
+	blur1 $\leftarrow$ reconstruct($\sim$Iobrd,$\sim$Iobr) \\
+	blur2 = $\sim$blur1 \\
+	fgm, fgm2 $\leftarrow$ localmax(blur1), localmax(blur2) \\
+	fgm, fgm2 $\leftarrow$ fillHoles(fgm), fillHoles(fgm2) \\
+	CC1, CC2 $\leftarrow$ components(fgm), components(fgm2) \\
+	return CC1 + CC2 \\
+\end{addmargin}
+This method blurs the image a significant amount to create a more even color distribution then looks for local maximums. It fills in any holes that were not local maxima and returns the components of the corrected image.
+
+\subsubsection*{colorBasedSeg}
+\begin{addmargin}[12em]{1em}
+	J $\leftarrow$ grayscale image \\
+	x,y $\leftarrow$ dimensions(J) \\
+	blank $\leftarrow$ zeroMatrix(x,y) \\
+	se $\leftarrow$ structural square \\
+	Io $\leftarrow$ erode(J,se) \\
+	Io $\leftarrow$ dilate(J,se) \\
+	Ie $\leftarrow$ erode(Io,se) \\
+	Iobr $\leftarrow$ reconstruct(Ie,$\sim$J) \\
+	Iobrd $\leftarrow$ dilate(Iobr, se) \\
+	Iobrcbr $\leftarrow$ reconstruct($\sim$Iobrd,$\sim$Iobr) \\
+	CC $\leftarrow$ components(null) \\
+	for i in range 0 to 255: \\
+	\tab C $\leftarrow$ Iobrcbr == i \\
+	\tab C $\leftarrow$ fillHoles(C) \\
+	\tab C $\leftarrow$ C minus small pieces \\
+	\tab C $\leftarrow$ components(C) \\
+	\tab for j in range 1 to length(C): \\
+	\tab\tab CC += C \\
+	\tab rof \\
+	rof \\
+	return CC \\	
+\end{addmargin}
+Similar to blurSegmentation, this method first blurs the image to get a more even color distribution. It then gets components by taking pixels of each color index, filling the holes, cleaning up noise, and merging them into one component list to return.
+
+\subsubsection*{Connected\_Comp\_Edges}
+\begin{addmargin}[12em]{1em}
+	I $\leftarrow$ grayscale image \\
+	gsI $\leftarrow$ gaussFilter(I) \\
+	I2 $\leftarrow$ edge(gsI,canny) \\
+	hy $\leftarrow$ sobelFilter \\
+	Iy $\leftarrow$ filter(I,hy) \\
+	Ix $\leftarrow$ filter(I,hy') \\
+	se $\leftarrow$ structural square \\
+	Io $\leftarrow$ dilate(J,se) \\
+	Io $\leftarrow$ erode(J,se) \\
+	Ie $\leftarrow$ erode(Io,se) \\
+	Iobr $\leftarrow$ reconstruct(Ie,$\sim$J) \\
+	Iobrd $\leftarrow$ dilate(Iobr, se) \\
+	Iobrcbr $\leftarrow$ reconstruct($\sim$Iobrd,$\sim$Iobr) \\
+	fgm $\leftarrow$ localmax(Iobrcbr) \\
+	fgm $\leftarrow$ edge(fgm,sobel) \\
+	fgm $\leftarrow$ thicken(fgm) \\
+	se $\leftarrow$ structural disk \\
+	cfgm $\leftarrow$ erode(fgm,se) \\
+	cfgm $\leftarrow$ dilate(cfgm,se) \\
+	inv $\leftarrow$ $\sim$cfgm \\
+	CC $\leftarrow$ components(inv) \\
+	return CC \\		
+\end{addmargin}
+%TODO: Write a summary of the function
+
+\subsubsection*{crudeAFSegmentation}
+\begin{addmargin}[12em]{1em}
+	rgb $\leftarrow$ color image \\
+	rgb $\leftarrow$ gaussFilter(rgb) \\
+	I $\leftarrow$ grayscale(rgb) \\
+	I $\leftarrow$ thicken(I) \\ 
+	se $\leftarrow$ structural square \\
+	I $\leftarrow$ erode(I,se) \\
+	I $\leftarrow$ dilate(I,se) \\
+	I $\leftarrow$ $\sim$shrink(I) \\ 
+	%TODO: finish pseudocode
+\end{addmargin}
+%TODO: Write summary of function
+
+\subsubsection*{ext\_grad\_seg}
+\begin{addmargin}[12em]{1em}
+	ibw $\leftarrow$ grayscale image \\
+	se $\leftarrow$ structural square \\
+	eg $\leftarrow$ dilate(ibw,se) - ibw \\
+	rec $\leftarrow$ reconstruct(eg,ibw) \\
+	f1 $\leftarrow$ edge(rec,canny) \\
+	fgm $\leftarrow$ localmax(rec) \\
+	fgm $\leftarrow$ fgm minus small pieces \\
+	return components(fgm) \\
+\end{addmargin}
+This method enhances external boundaries, darkens internal boundaries, and uses Canny edge detection to split the image up into components.
+
+\subsubsection*{rgbSeg}
+\begin{addmargin}[12em]{1em}
+	J $\leftarrow$ color image \\
+	x,y $\leftarrow$ dimension(J) \\
+	apform $\leftarrow$ L*a*b form of J \\
+	apd $\leftarrow$ reshape apform to x*y by 2 \\
+	cluster $\leftarrow$ kmeans(apd) with k = 5 \\
+	pixels $\leftarrow$ reshape cluster to x by y \\
+	CC $\leftarrow$ empty component list \\
+	for i in range 1 to 5: \\
+	\tab temp $\leftarrow$ x by y zero matrix \\
+	\tab temp $\leftarrow$ (pixels == i) minus small pieces \\
+	\tab CC += components(temp) \\
+	rof \\
+	return CC \\
+\end{addmargin}
+This method takes an rgb image and segments it into 5 parts using k-means. It then finds components for each individual cluster and merges them together in a master list. 
+
+\subsubsection*{thinRoad}
+\begin{addmargin}[12em]{1em}
+	I $\leftarrow$ grayscale image \\
+	I2 $\leftarrow$ $\sim$I \\
+	x,y $\leftarrow$ dimensions of I \\
+	BW1, BW2 $\leftarrow$ I > 150, I2 > 150 \\
+	BW1, BW2 $\leftarrow$ fillHoles(BW1), fillHoles(BW2) \\
+	BW1, BW2 $\leftarrow$ BW1, BW2 minus very small pieces \\
+	CC1, CC2 $\leftarrow$ components(BW1), components(BW2) \\
+	return CC1 + CC2 \\
+\end{addmargin}
+This method segments a grayscale image and it's complement by separating by intensity and filling holes. It removes only very small components to accommodate for the small area of thin roads.
+
+\subsection*{User Interface}
+
+\subsection*{Object and Road Detection}
+This part of the problem involved algorithms to find out which of the components found by the segmenter were roads. We observe that roads are generally long and narrow, while non-road components (such as forests, rooftops, etc) are generally less narrow. Our approach to the problem of deciding whether a given component is a road involved calculating each component's narrowness ratio, calculated by the following algorithm:
+
+First, calculate the typical diameter $R$ of the component by taking $C$ random pairs of points and taking the average distance between them. Then calculate the narrowness of the component by taking $C$ random points in it, and calculating the minimal distance of each of these points to a different component. Call the average of these distances $D$. The ratio $R/D$ describes the narrowness of an object, and was found to correlate well with its probability of being a road.
+
+By testing this on a representative sample of road pictures, we used naive baysian probability to write a function calculating the probability of a given component being a road. In particular, we assumed that both roads and non-road components have narrowness ratio given by a normal distribution, used our sample to calculate their means and variances, and calculate the probability of a component being a road by the conditional probability given by this model. 
+
+Our results our fairly optimistic, with all observed roads being classified as having probability at least $60%$ of being roads. Non-road components are occasionally misclassified, however. As false negatives are more harmful to our program than false positives, this is acceptable.
+
+\textbf{Notes on choices:} We found that $C=1000$ was a good value - it allows for reasonably fast computations (no more than a couple of minutes at worst), as well as allowing sufficient accuracy for our predictions. 
+
+We also chose to use minimal distance to another component when calculating $D$, rather than using minimal distance to any pixel not in the component. This is significant, since most images have a significant number of pixels which are not classified as part of any component. However, roads almost always have other components nearby, while isolated components are rarely roads. As a small value of $D$ raises the probability that a component is a road, this improves our accuracy.
+
+
+\textbf{Oppurtunities for further improvement}
+It may be useful to further train our model by considering more variables. In particular, using the first few moments of both the average diameter $R$ and the average distance to outside $D$ (instead of just the ratio of their means) may have the ability to greatly improve the accuracy of the model. Furthermore, once our car classification program improves, we can adjust the probability of a component to be a road if we detect cars on it.
+
+\subsection*{Code Call Chart}
+
+\subsection*{Future Work}
+
+
+
+
+
+\end{document}
+

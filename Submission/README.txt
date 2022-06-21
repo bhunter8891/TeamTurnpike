@@ -1,0 +1,1 @@
+This folder is for final drafts of code and the technical write up. Once you have finished commenting and editing your code, put it in here. When everything is submitted, I'll put everything into a zip file and send it to Alfonso.

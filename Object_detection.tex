@@ -1,0 +1,249 @@
+\documentclass[12pt]{article}
+
+%PACKAGES
+\usepackage{fullpage}
+\usepackage{setspace}
+\setlength{\parindent}{0cm}
+\usepackage{parskip}
+\usepackage{amssymb, amsmath, amsthm, graphicx}
+\usepackage{mathtools}
+\usepackage{siunitx}
+\usepackage{comment}
+\usepackage{scrextend}
+\usepackage{lipsum}
+
+\newcommand\tab[1][1cm]{\hspace*{#1}}
+
+%FONTS
+\usepackage{times}
+
+%COMMANDS
+\newcommand{\note}[1]{\textcolor{orange}{#1}}
+\DeclarePairedDelimiter{\norm}{\|}{\|}
+
+\begin{document}
+\begin{Large}
+Human Guided Machine Vision for Road Detection\\
+Team AddNameHereWhenWeFinallyDecide\\
+\end{Large}
+Kelsey DiPietro, Richard Frnka, Brian Hunter, Shaked Koplewitz, Khanh Nguyen, Scott Spencer
+
+\subsection*{Problem Statement}
+
+Detection of roads from an aerial view is an important problem, yet one with an elusive general solution. Road detection is essential to developing and maintaining a database of roads, especially with the increased use of GPS devices. Humans are particularly good at picking out roads from an image, but can only do so at a limited speed. Computers operate at the other end of the spectrum, lacking in a general algorithm to detect roads, but able to do so quickly. To get the best of both worlds, it is useful to combine a computer program with human input to fill in where a computer missed a road. 
+
+$\newline$
+The task was to create a program which finds roads in an aerial image and contains a user interface for a human to highlight specific roads and identify any missed roads. All user interface was to be done in a graphical component which allows the user to easily click on the image and have the computer do the rest of filling in and highlighting.
+
+\subsection*{Initial Setup}
+The project was divided into three subprojects: A pre-processing part which involved initially segmenting the image into candidate road component and an object detection part which involved ranking the components for their likeliness to be a road and finding obstructions that blocked view of the road. After pre-processing was complete, there was a graphical user interface piece which would allow a human user to select and highlight roads and identify any roads missed by the pre-processing.
+
+All programming was done using MATLAB which has built in libraries for image segmentation and graphical user interface. Only simple images consisting of a single road with no cars were considered initially, but as the segmentation methods were developed, more complicated road configurations were used. Since no single algorithm performed well on all roads, many were considered, each with a unique segmentation process.
+
+\subsection*{Segmentation Methods}
+
+Below is a list of the segmentation functions with pseudocode and a brief description:
+
+
+\subsubsection*{basicSegmentation}
+\begin{addmargin}[12em]{1em}
+	J $\leftarrow$ grayscale image \\
+	BW $\leftarrow$ edge(J,canny) \\
+	se0 $\leftarrow$ structural horizontal line of length 3 \\
+	se90 $\leftarrow$ structural vertical line of length 3 \\
+	BW $\leftarrow$ dilate(BW,[se0,se90]) \\
+	BW2 $\leftarrow$ $\sim$BW \\
+	BW, BW2 $\leftarrow$ fillHoles(BW), fillHoles(BW2)\\
+	BW, BW2 $\leftarrow$ BW, BW2 minus small pieces \\
+	CC1 $\leftarrow$ components(BW) \\
+	CC2 $\leftarrow$ components(BW2) \\
+	return CC1 + CC2 \\	
+\end{addmargin}
+This method is a bareboned road finder. It finds the edges, thickens them, fills the holes, cleans up noise, and returns the components.
+
+\subsubsection*{blurSegmentation}
+\begin{addmargin}[12em]{1em}
+	J $\leftarrow$ grayscale image \\
+	se $\leftarrow$ structural square \\
+	Io $\leftarrow$ erode(J,se) \\
+	Io $\leftarrow$ dilate(J,se) \\
+	Ie $\leftarrow$ erode(Io,se) \\
+	Iobr $\leftarrow$ reconstruct(Ie,$\sim$J) \\
+	Iobrd $\leftarrow$ dilate(Iobr, se) \\
+	blur1 $\leftarrow$ reconstruct($\sim$Iobrd,$\sim$Iobr) \\
+	blur2 = $\sim$blur1 \\
+	fgm, fgm2 $\leftarrow$ localmax(blur1), localmax(blur2) \\
+	fgm, fgm2 $\leftarrow$ fillHoles(fgm), fillHoles(fgm2) \\
+	CC1, CC2 $\leftarrow$ components(fgm), components(fgm2) \\
+	return CC1 + CC2 \\
+\end{addmargin}
+This method blurs the image a significant amount to create a more even color distribution then looks for local maximums. It fills in any holes that were not local maxima and returns the components of the corrected image.
+
+\subsubsection*{colorBasedSeg}
+\begin{addmargin}[12em]{1em}
+	J $\leftarrow$ grayscale image \\
+	x,y $\leftarrow$ dimensions(J) \\
+	blank $\leftarrow$ zeroMatrix(x,y) \\
+	se $\leftarrow$ structural square \\
+	Io $\leftarrow$ erode(J,se) \\
+	Io $\leftarrow$ dilate(J,se) \\
+	Ie $\leftarrow$ erode(Io,se) \\
+	Iobr $\leftarrow$ reconstruct(Ie,$\sim$J) \\
+	Iobrd $\leftarrow$ dilate(Iobr, se) \\
+	Iobrcbr $\leftarrow$ reconstruct($\sim$Iobrd,$\sim$Iobr) \\
+	CC $\leftarrow$ components(null) \\
+	for i in range 0 to 255: \\
+	\tab C $\leftarrow$ Iobrcbr == i \\
+	\tab C $\leftarrow$ fillHoles(C) \\
+	\tab C $\leftarrow$ C minus small pieces \\
+	\tab C $\leftarrow$ components(C) \\
+	\tab for j in range 1 to length(C): \\
+	\tab\tab CC += C \\
+	\tab rof \\
+	rof \\
+	return CC \\	
+\end{addmargin}
+Similar to blurSegmentation, this method first blurs the image to get a more even color distribution. It then gets components by taking pixels of each color index, filling the holes, cleaning up noise, and merging them into one component list to return.
+
+\subsubsection*{Connected\_Comp\_Edges}
+\begin{addmargin}[12em]{1em}
+	I $\leftarrow$ grayscale image \\
+	hy $\leftarrow$ sobelFilter \\
+	Iy $\leftarrow$ filter(I,hy) \\
+	Ix $\leftarrow$ filter(I,hy') \\
+	se $\leftarrow$ structural square \\
+	Io $\leftarrow$ dilate(J,se) \\
+	Io $\leftarrow$ erode(J,se) \\
+	Ie $\leftarrow$ erode(Io,se) \\
+	Iobr $\leftarrow$ reconstruct(Ie,$\sim$J) \\
+	Iobrd $\leftarrow$ dilate(Iobr, se) \\
+	Iobrcbr $\leftarrow$ reconstruct($\sim$Iobrd,$\sim$Iobr) \\
+	fgm $\leftarrow$ localmax(Iobrcbr) \\
+	fgm $\leftarrow$ edge(fgm,sobel) \\
+	fgm $\leftarrow$ thicken(fgm) \\
+	se $\leftarrow$ structural disk \\
+	cfgm $\leftarrow$ erode(fgm,se) \\
+	cfgm $\leftarrow$ dilate(cfgm,se) \\
+	inv $\leftarrow$ $\sim$cfgm \\
+	CC $\leftarrow$ components(inv) \\
+	return CC \\		
+\end{addmargin}
+A method that uses a Sobel filter and multiple dilations an erosions to smooth an image. It finds the edges using the Canny method and thickens them before finding the components.
+
+\subsubsection*{crudeAFSegmentation}
+\begin{addmargin}[12em]{1em}
+	rgb $\leftarrow$ color image \\
+	rgb $\leftarrow$ gaussFilter(rgb) \\
+	I $\leftarrow$ grayscale(rgb) \\
+	I $\leftarrow$ thicken(I) \\ 
+	se $\leftarrow$ structural square \\
+	I $\leftarrow$ erode(I,se) \\
+	I $\leftarrow$ dilate(I,se) \\
+	I $\leftarrow$ $\sim$shrink(I) \\ 
+	%TODO: finish pseudocode (Scott)
+\end{addmargin}
+%TODO: Write summary of function (Scott)
+
+\subsubsection*{ext\_grad\_seg}
+\begin{addmargin}[12em]{1em}
+	ibw $\leftarrow$ grayscale image \\
+	se $\leftarrow$ structural square \\
+	eg $\leftarrow$ dilate(ibw,se) - ibw \\
+	rec $\leftarrow$ reconstruct(eg,ibw) \\
+	f1 $\leftarrow$ edge(rec,canny) \\
+	fgm $\leftarrow$ localmax(rec) \\
+	fgm $\leftarrow$ fgm minus small pieces \\
+	return components(fgm) \\
+\end{addmargin}
+This method enhances external boundaries, darkens internal boundaries, and uses Canny edge detection to split the image up into components.
+
+\subsubsection*{rgbSeg}
+\begin{addmargin}[12em]{1em}
+	J $\leftarrow$ color image \\
+	x,y $\leftarrow$ dimension(J) \\
+	apform $\leftarrow$ L*a*b form of J \\
+	apd $\leftarrow$ reshape apform to x*y by 2 \\
+	cluster $\leftarrow$ kmeans(apd) with k = 5 \\
+	pixels $\leftarrow$ reshape cluster to x by y \\
+	CC $\leftarrow$ empty component list \\
+	for i in range 1 to 5: \\
+	\tab temp $\leftarrow$ x by y zero matrix \\
+	\tab temp $\leftarrow$ fillHoles(temp) \\
+	\tab temp $\leftarrow$ (pixels == i) minus small pieces \\
+	\tab CC += components(temp) \\
+	rof \\
+	return CC \\
+\end{addmargin}
+This method takes an rgb image and segments it into 5 parts using k-means. It then finds components for each individual cluster and merges them together in a master list. 
+
+\subsubsection*{thinRoad}
+\begin{addmargin}[12em]{1em}
+	I $\leftarrow$ grayscale image \\
+	I2 $\leftarrow$ $\sim$I \\
+	x,y $\leftarrow$ dimensions of I \\
+	BW1, BW2 $\leftarrow$ I > 150, I2 > 150 \\
+	BW1, BW2 $\leftarrow$ fillHoles(BW1), fillHoles(BW2) \\
+	BW1, BW2 $\leftarrow$ BW1, BW2 minus very small pieces \\
+	CC1, CC2 $\leftarrow$ components(BW1), components(BW2) \\
+	return CC1 + CC2 \\
+\end{addmargin}
+This method segments a grayscale image and it's complement by separating by intensity and filling holes. It removes only very small components to accommodate for the small area of thin roads.
+
+%TODO: Add computation time info (Segmentation team)
+
+\subsection*{Canny Edge Detection and K-Means}
+Canny edge detection comes up frequently in the segmentation methods above. This edge detection algorithm has six steps, which are outlined here: Apply a Gaussian filter to reduce unwanted noise, compute the gradient of the image, finding an optimal cutoff threshold and apply it to the image, suppress non-maxima pixels, threshold the image twice more with a low and high threshold, and merge segments in the noisier image using the low noise image as a guide. MATLAB does feature many other edge detection algorithms, but Canny was found to be a strong candidate for road detection due to it's ability to suppress unwanted noise and find the true edge of the road. 
+
+$\newline$
+The rgbSeg method used the k-means algorithm from machine learning as a way to divide an image by it's color value. K-means works by first assigning k random centroids among the set of data points, in this case pixels. Then at each step, every point is assigned to the group which has the closest centroid and after all points are grouped, new centroids are calculated. New group assignments and centroids are found until the groups stop changing, at which point the algorithm has converged to a local minimum. It is important to note that k-means will converge to a local minimum, but it is not guaranteed to be a global minimum. Depending on the amount of pre-processing time allowed, it may be beneficial in the rgbSeg method to repeat the k-means method multiple times and take the best solution, as this could help to ensure that the image is not segmented into an undesirable local minimum. However, in practice, a non-optimal clustering on the image did not hinder road detection to a significant extent in that if any additional pieces were grouped in the same cluster as the road, they were separated when splitting up the image into components.
+
+\subsection*{User Interface}
+%TODO: (Richard)
+
+\subsection*{Object and Road Detection}
+%TODO: (Khanh + Shaked)
+Object detection: 
+
+\subsubsection*{car\_detection}
+\begin{addmargin}[12em]{1em}
+	M1\_B $\leftarrow$ grayscale image \\
+	M2\_B $\leftarrow$ maximum intensity of each row of M1\_B \\
+	T1\_B $\leftarrow$ mean(M2\_B) \\
+	T2\_B $\leftarrow$ min(M2\_B) \\
+	T3\_B $\leftarrow$ mean(T1\_B,T2\_B) \\
+	Image1\_B $\leftarrow$ 0 if M1\_B(i,j) \textless T1\_B; 1 if M1\_B(i,j) \textgreater T1\_B \\
+	Image2\_B $\leftarrow$ 0 if M1\_B(i,j) \textless T2\_B; 1 if M1\_B(i,j) \textgreater T2\_B \\
+	Image3\_B $\leftarrow$ 0 if M1\_B(i,j) \textless T3\_B; 1 if M1\_B(i,j) \textgreater T3\_B \\
+	New\_Image1\_B $\leftarrow$ bitand(Image1\_B, Image2\_B) \\
+	New\_Image2\_B $\leftarrow$ bitand(New\_Image1\_B, Image3\_B) \\
+	Bright\_cars $\leftarrow$ bitor(New\_Image1\_B, New\_Image1\_B) \\
+	M1\_D $\leftarrow$ grayscale image \\
+	M2\_D $\leftarrow$ minimum intensity of each row of M1\_D \\
+	T1\_D $\leftarrow$ mean(M2\_D) \\
+	T2\_D $\leftarrow$ min(M2\_D) \\
+	T3\_D $\leftarrow$ mean(T1\_D,T2\_D) \\
+	Image1\_D $\leftarrow$ 1 if M1\_D(i,j) \textless T1\_D; 0 if M1\_D(i,j) \textgreater T1\_D \\
+	Image2\_D $\leftarrow$ 1 if M1\_D(i,j) \textless T2\_D; 0 if M1\_D(i,j) \textgreater T2\_D \\
+	Image3\_D $\leftarrow$ 1 if M1\_D(i,j) \textless T3\_D; 0 if M1\_D(i,j) \textgreater T3\_D \\
+	New\_Image1\_D $\leftarrow$ bitand(Image1\_D, Image2\_D) \\
+	New\_Image2\_D $\leftarrow$ bitand(New\_Image1\_D, Image3\_D) \\
+	Dark\_cars $\leftarrow$ bitor(New\_Image1\_D, New\_Image1\_D) \\
+	cars $\leftarrow$  bitor(Dark\_cars,Bright\_cars) \\
+	CC $\leftarrow$ bwconncomp(cars) \\
+	car\_labels $\leftarrow$ labelmatrix(CC) \\
+	return car\_labels \\
+\end{addmargin}
+Inspiring by the idea of Sumalatha Kuthadi's master's thesis, this method finds bright colored cars and black colored cars using multiple thresholds. Bright colored cars' intensities are higher comparing to road's intensity, and dark colored cars' intensities are lower comparing to road's intensity. Both types of cars are combined to define all cars on the road. This method successfully determines all car in a parking lot. Unfortunately, it won't work in more complicated pictures because it will spot on any other objects with brighter colors or darker colors as cars. As a result, this is not used to implement in the main algorithm.
+
+\subsection*{Code Call Chart}
+%TODO: (Whole Team)
+
+\subsection*{Future Work}
+%TODO: (Whole team)
+
+
+
+
+
+\end{document}
+
